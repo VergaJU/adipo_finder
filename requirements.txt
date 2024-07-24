@@ -1,0 +1,9 @@
+numpy
+pandas
+scanpy
+squidpy
+matplotlib
+anndata
+skimage
+scipy
+sklearn
