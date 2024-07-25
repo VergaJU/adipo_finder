@@ -46,8 +46,8 @@ class Segmentation:
         # watershed segmentation
         segmented_image=segmentation.watershed(image=-distance, markers=markers, mask=image)
         # perform opening
-        # structuring_element = morphology.disk(window)
-        structuring_element = np.ones((window, window))
+        structuring_element = morphology.disk(window)
+        # structuring_element = np.ones((window, window))
         segmented_image = morphology.opening(segmented_image, footprint=structuring_element)
         return segmented_image
     
