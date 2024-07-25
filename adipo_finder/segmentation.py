@@ -46,7 +46,9 @@ class Segmentation:
         # watershed segmentation
         segmented_image=segmentation.watershed(image=-distance, markers=markers, mask=image)
         # perform opening
-        segmented_image = morphology.opening(segmented_image, footprint=np.ones((window,window)))
+        # structuring_element = morphology.disk(window)
+        structuring_element = np.ones((window, window))
+        segmented_image = morphology.opening(segmented_image, footprint=structuring_element)
         return segmented_image
     
 
@@ -106,6 +108,7 @@ class Segmentation:
             # Add the dilated mask to the dilated_image, preserving the label
             dilated_image[dilated_mask] = label
 
+        dilated_image=segmentation.clear_border(dilated_image)
         return dilated_image
 
 
@@ -133,6 +136,7 @@ class Segmentation:
         filtered_image = cls.filter_objects_by_size(segmented_image, **kwargs)
         # expand the adipocytes
         expanded_image = cls.expand_adipocytes(filtered_image, **kwargs)
+
         return expanded_image
 
 

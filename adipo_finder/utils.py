@@ -58,7 +58,9 @@ class Preprocessing:
         return:
         np.ndarray, filtered image
         """
-        return filters.gaussian(image, sigma=sigma,preserve_range=True).astype('uint8')
+        if sigma is not None:
+            image = filters.gaussian(image, sigma=sigma,preserve_range=True).astype('uint8')
+        return image
 
 
     @staticmethod
