@@ -192,7 +192,7 @@ class Exporting:
         df = pd.DataFrame(columns=columns)
 
         # Update the base image and extract object properties
-        for region in measure.regionprops(measure.label(new_segmentation)):
+        for region in measure.regionprops(new_segmentation):
             base_image[new_segmentation == region.label] = new_value
             new_row=pd.DataFrame.from_dict({
                 'area': region.area,
