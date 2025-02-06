@@ -4,6 +4,6 @@ scanpy
 squidpy
 matplotlib
 anndata
-skimage
+scikit-image
 scipy
-sklearn
+scikit-learn
