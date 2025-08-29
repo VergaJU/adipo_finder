@@ -2,8 +2,8 @@ import squidpy as sq
 import scanpy as sc
 import pandas as pd 
 import numpy as np 
-from adipo_finder.adipo_finder import utils as seg_utils
-from adipo_finder.adipo_finder import segmentation as seg
+from adipo_finder import utils as seg_utils
+from adipo_finder import segmentation as seg
 import matplotlib.pyplot as plt
 import warnings
 warnings.filterwarnings("ignore")
@@ -594,7 +594,7 @@ def extract_shape_size_features(segmented_image, distance_image):
     
     Features included:
       - segment_id
-      - area
+      - area (as sqrt(area))
       - eccentricity
       - compactness
       - max_dist (from distance transform, requires distance_image)
@@ -630,7 +630,7 @@ def extract_shape_size_features(segmented_image, distance_image):
 
         features.append({
             "segment_id": region.label,
-            "area": area,
+            "area": np.sqrt(area),
             "eccentricity": ecc,
             "compactness": compactness,
             "max_dist": max_dist,
@@ -875,7 +875,7 @@ def preprocess_and_extract(img_id, input_img, gt_img, iou_threshold=0.5,
 def prepare_datasets(all_ids, gt_ids, input_images, ground_truth_images, min_distance_seg_init = 30,
                     min_island_area = 0):
     """
-    Preprocess all images, extract features + labels, and split into train/val/test sets.
+    Preprocess all images and extract features + labels.
     The returned ground_truth number is the best overlapping label in the gt if above the 
     coverage threshold, 0 if matched but below the threshold, and NaN if no overlap. So, 
     we treat NaN and 0 as False. Note that this classifier we are building assumes the overlaps
@@ -1031,11 +1031,11 @@ def set_seed(seed=42):
         torch.backends.cudnn.deterministic = True  # make CUDA deterministic
         torch.backends.cudnn.benchmark = False     # disable auto-optimization
 
-def train_model(full_df, n_epochs = 2000, seed = 42):
+def train_model(full_df, n_epochs = 1000, seed = 42, val_frac = 0.2, test_frac = 0.2):
     set_seed(seed)
     image_ids = full_df['image_id'].unique()
-    train_ids, test_ids = train_test_split(image_ids, test_size=0.5, random_state=42) #don't use seed here, better to always get the same
-    train_ids, val_ids = train_test_split(train_ids, test_size=0.3, random_state=42)  # 60/20/20 split
+    train_ids, test_ids = train_test_split(image_ids, test_size=test_frac, random_state=42) #don't use seed here, better to always get the same
+    train_ids, val_ids = train_test_split(train_ids, test_size=val_frac, random_state=42)  # split
     print(f"Training: {len(train_ids)}, validation: {len(val_ids)}, test: {len(test_ids)}")
 
 
