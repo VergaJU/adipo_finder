@@ -2,6 +2,7 @@ library(ggplot2)
 library(tidyr)
 library(dplyr)
 
+
 # Read the data
 eval_df = read.table("../../evaluation_old_vs_new.txt", sep="\t", header=TRUE)
 
@@ -94,19 +95,19 @@ old_prec = df_test$value[df_test$metric == "Precision" & df_test$version == "Pre
 old_prec
 new_prec = df_test$value[df_test$metric == "Precision" & df_test$version == "Current"]
 new_prec
-t.test(new_prec, old_prec, var.equal = TRUE) #p-value = 0.3545 #ns
+t.test(new_prec, old_prec, var.equal = TRUE) #p-value = 0.4827 #ns
 
 old_recall = df_test$value[df_test$metric == "Recall" & df_test$version == "Previous"]
 old_recall
 new_recall = df_test$value[df_test$metric == "Recall" & df_test$version == "Current"]
 new_recall
-t.test(new_recall, old_recall, var.equal = TRUE) #p-value = 0.001924
+t.test(new_recall, old_recall, var.equal = TRUE) #p-value = 0.009411
 
 old_f1 = df_test$value[df_test$metric == "F1" & df_test$version == "Previous"]
 old_f1
 new_f1 = df_test$value[df_test$metric == "F1" & df_test$version == "Current"]
 new_f1
-t.test(new_f1, old_f1, var.equal = TRUE) #p-value = 0.01
+t.test(new_f1, old_f1, var.equal = TRUE) #p-value = 0.03895
 
 #now also a plot with just the new values
 
@@ -138,3 +139,66 @@ ggsave(filename = "../../boxplot_eval_test_only.png",
        bg = "white",
        dpi = 300)         # resolution
 
+
+########################
+# Investigate the scaling
+########################
+
+library(tidyverse)
+
+d = read_tsv("data/exported_feature_data.txt")
+d
+
+library(ggplot2)
+
+plot_feature_boxplot = function(df, feature) {
+  # df: your tibble
+  # feature: string with the column name to plot
+  
+  ggplot(df, aes(x = image_id, y = .data[[feature]])) +
+    geom_boxplot(outlier.size = 0.5) +
+    labs(
+      title = paste("Boxplot of", feature, "per image_id"),
+      x = "Image ID",
+      y = feature
+    ) +
+    theme_bw() +
+    theme(
+      axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)
+    )
+}
+
+plot_feature_boxplot(d, "area") #some variation
+plot_feature_boxplot(d, "eccentricity") #some variation, not dramatic
+plot_feature_boxplot(d, "compactness") #ok
+plot_feature_boxplot(d, "max_dist") #varies
+plot_feature_boxplot(d, "distance_from_shore") #varies a lot, but that is expected
+plot_feature_boxplot(d, "frac_ring_other_objects") #varies a lot
+plot_feature_boxplot(d, "frac_ring_tissue") #varies a lot
+
+#ok, now filter to only have gt = 1
+unique(d$ground_truth)
+dx = d[!is.na(d$ground_truth),]
+d2 = dx[dx$ground_truth > 0,]
+plot_feature_boxplot(d2, "area") #some variation
+plot_feature_boxplot(d2, "eccentricity") #some variation, not dramatic
+plot_feature_boxplot(d2, "compactness") #ok
+plot_feature_boxplot(d2, "max_dist") #varies
+plot_feature_boxplot(d2, "distance_from_shore") #varies a lot, but that is expected
+plot_feature_boxplot(df, "frac_ring_other_objects") #varies a lot
+plot_feature_boxplot(df, "frac_ring_tissue") #varies a lot
+
+sum(is.na(d2$ground_truth))
+
+d3 = d2[is.na(d2$area),]
+d3
+d4 = d2[!is.na(d2$area),]
+d4
+unique(d4$image_id)
+unique(d2$image_id)
+unique(d$image_id)
+
+sum(is.na(d2$area))
+sum(is.na(d2$compactness ))
+
+eval_long[eval_long$metric == "F1" & eval_long$version == "Current",]

@@ -26,7 +26,6 @@ from sklearn.preprocessing import StandardScaler
 import random
 import os
 
-
 def shuffle_labels(labeled_image):
     '''
     Shuffles the labels of a labeled image, making it more
@@ -973,13 +972,41 @@ def plot_one_segment(segmented_image, segment_label):
     plt.show()
 
 def get_training_input_from_df(df):
+    '''
+    Use this function for preparing the data for training.
+    Make sure to save the returned scaler to disk for later
+    use when predicting. Do not use this function when preparing
+    for prediction only - the training was done on data with a 
+    certain scaler - using a different one (i.e., a scaler fit to 
+    different data) will worsen the performance
+    import pickle
+
+    # save
+    with open("scaler.pkl", "wb") as f:
+        pickle.dump(scaler, f)
+
+    # load
+    with open("scaler.pkl", "rb") as f:
+        scaler = pickle.load(f)
+    '''
     #scale them
     X = df.drop(columns=['segment_id','ground_truth','image_id']).values
     scaler = StandardScaler()
     X = scaler.fit_transform(X)
     X = torch.tensor(X, dtype=torch.float32)
+    return X,scaler #important to store the scaler for use with prediction later
+    
+def get_prediction_input_from_df(df, scaler):
+    '''
+    Use this function for all cases except the training set, so
+    use it for the validation set, test set, and other predictions.
+    Send in the scaler that was returned from get_training_input_from_df.
+    '''
+    X = df.drop(columns=['segment_id','ground_truth','image_id']).values
+    X = scaler.transform(X)  # only transform, don’t fit
+    X = torch.tensor(X, dtype=torch.float32)
     return X
-
+    
 def get_y_from_df(df):
     y = (df['ground_truth'] > 0).to_numpy().astype(np.float32)
     y = torch.tensor(y, dtype=torch.float32).unsqueeze(1)
@@ -1043,28 +1070,22 @@ def train_model(full_df, n_epochs = 1000, seed = 42, val_frac = 0.2, test_frac =
     val_mask   = full_df['image_id'].isin(val_ids)
     test_mask  = full_df['image_id'].isin(test_ids)
 
-
-    X_train = get_training_input_from_df(full_df.loc[train_mask])
+    #we scale the data by fitting a scaler to the training set. We then save 
+    #the scaler so we can use the same scaler later when predicting. We use
+    #the scaler on the validation and test sets
+    X_train, scaler = get_training_input_from_df(full_df.loc[train_mask])
     y_train = get_y_from_df(full_df.loc[train_mask])
 
-    X_val   = get_training_input_from_df(full_df.loc[val_mask])
+    X_val   = get_prediction_input_from_df(full_df.loc[val_mask], scaler)
     y_val   = get_y_from_df(full_df.loc[val_mask])
 
-    X_test  = get_training_input_from_df(full_df.loc[test_mask])
+    X_test  = get_prediction_input_from_df(full_df.loc[test_mask], scaler)
     y_test  = get_y_from_df(full_df.loc[test_mask])
-
-
-    #def worker_init_fn(worker_id):
-        # Each worker has a different RNG, we seed it based on global seed + worker id
-    #    seed = torch.initial_seed() % 2**32
-    #    np.random.seed(seed)
-    #    random.seed(seed)
 
 
     # Create datasets and loaders
     train_dataset = TensorDataset(X_train, y_train)
     val_dataset = TensorDataset(X_val, y_val)
-    #train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, worker_init_fn=worker_init_fn)
     train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, worker_init_fn=lambda _: np.random.seed(seed))
     val_loader = DataLoader(val_dataset, batch_size=32)
 
@@ -1097,14 +1118,14 @@ def train_model(full_df, n_epochs = 1000, seed = 42, val_frac = 0.2, test_frac =
         val_loss /= len(val_loader)
         print(f"Epoch {epoch+1}/{n_epochs}, Validation Loss: {val_loss:.4f}")
         
-    return model, train_ids, val_ids, test_ids
+    return model, train_ids, val_ids, test_ids, scaler
         
-def evaluate_model(model, full_df, test_ids):
+def evaluate_model(model, scaler, full_df, test_ids):
     # Make sure your model is in evaluation mode
     model.eval()
     test_mask  = full_df['image_id'].isin(test_ids)
     
-    X_test  = get_training_input_from_df(full_df.loc[test_mask])
+    X_test  = get_prediction_input_from_df(full_df.loc[test_mask], scaler)
     y_test  = get_y_from_df(full_df.loc[test_mask])
 
     # Disable gradient computation for evaluation
@@ -1156,9 +1177,9 @@ def prediction_plot(bin_mask_image, segmented_unfiltered, pred_image, gt_image, 
         plt.show()
     plt.close()
 
-def predict_and_clean_image(model, samp_id, samp_ind, full_df, unfiltered_seg):
+def predict_and_clean_image(model, scaler, samp_id, samp_ind, full_df, unfiltered_seg):
     df_samp = full_df.loc[full_df['image_id'] == samp_id]
-    X_samp = get_training_input_from_df(df_samp)
+    X_samp = get_prediction_input_from_df(df_samp, scaler)
     segmented_sample = unfiltered_seg
     model.eval()
     with torch.no_grad():
@@ -1173,7 +1194,7 @@ def predict_and_clean_image(model, samp_id, samp_ind, full_df, unfiltered_seg):
         cleaned_image[cleaned_image == seg_id] = 0
     return cleaned_image
 
-def predict_and_clean_images(model, full_df, all_ids, all_unfiltered_seg, 
+def predict_and_clean_images(model, scaler, full_df, all_ids, all_unfiltered_seg, 
                              gt_ids, gt_images, all_bin_mask, path, plot_path):
     '''Paths are expected to end with /'''
     os.makedirs(path, exist_ok=True)
@@ -1181,7 +1202,7 @@ def predict_and_clean_images(model, full_df, all_ids, all_unfiltered_seg,
         
     for samp_ind, samp_id in enumerate(all_ids):
         print(f"Processing {samp_ind+1} of {len(all_ids)}")
-        cleaned_image = predict_and_clean_image(model, samp_id, samp_ind, full_df, all_unfiltered_seg[samp_ind])
+        cleaned_image = predict_and_clean_image(model, scaler, samp_id, samp_ind, full_df, all_unfiltered_seg[samp_ind])
         
         #look up the ground truth image if it exists
         gt_ind = [i for i,x in enumerate(gt_ids) if x == samp_id]
