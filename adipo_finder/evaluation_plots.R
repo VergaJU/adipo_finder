@@ -95,13 +95,13 @@ old_prec = df_test$value[df_test$metric == "Precision" & df_test$version == "Pre
 old_prec
 new_prec = df_test$value[df_test$metric == "Precision" & df_test$version == "Current"]
 new_prec
-t.test(new_prec, old_prec, var.equal = TRUE) #p-value = 0.4827 #ns
+t.test(new_prec, old_prec, var.equal = TRUE) #p-value = 0.8557 #ns
 
 old_recall = df_test$value[df_test$metric == "Recall" & df_test$version == "Previous"]
 old_recall
 new_recall = df_test$value[df_test$metric == "Recall" & df_test$version == "Current"]
 new_recall
-t.test(new_recall, old_recall, var.equal = TRUE) #p-value = 0.009411
+t.test(new_recall, old_recall, var.equal = TRUE) #p-value = 0.005689
 
 old_f1 = df_test$value[df_test$metric == "F1" & df_test$version == "Previous"]
 old_f1
