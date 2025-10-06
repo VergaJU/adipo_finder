@@ -107,7 +107,7 @@ old_f1 = df_test$value[df_test$metric == "F1" & df_test$version == "Previous"]
 old_f1
 new_f1 = df_test$value[df_test$metric == "F1" & df_test$version == "Current"]
 new_f1
-t.test(new_f1, old_f1, var.equal = TRUE) #p-value = 0.03895
+t.test(new_f1, old_f1, var.equal = TRUE) #p-value = 0.01541
 
 #now also a plot with just the new values
 
