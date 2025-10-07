@@ -113,6 +113,7 @@ t.test(new_f1, old_f1, var.equal = TRUE) #p-value = 0.01541
 
 #now subset to test
 df_test_curr = df_test[df_test$version == "Current" ,]
+write_tsv(df_test_curr, "data/test_set_results.txt")
 # Plot boxplots
 p = ggplot(df_test_curr, aes(x = metric, y = value)) +
   geom_boxplot(outliers = FALSE, fill = "#aaaaaa") +
