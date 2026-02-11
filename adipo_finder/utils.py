@@ -3,9 +3,9 @@ import numpy as np
 from anndata import AnnData
 import anndata as ad
 from matplotlib import pyplot as plt 
-from skimage import measure, morphology, filters
-from scipy.ndimage import distance_transform_edt
+from skimage import measure, filters
 import pandas as pd
+from PIL import Image
 
 class Preprocessing:
     @staticmethod
@@ -78,7 +78,7 @@ class Preprocessing:
 
 
     @classmethod
-    def preprocess_image(cls, adata: AnnData,library_id: str, **kwargs) -> np.ndarray:
+    def preprocess_image(cls, image: np.ndarray = None, adata: AnnData = None,library_id: str = None, **kwargs) -> tuple[np.ndarray, np.ndarray]:
         """
         Preprocess the image for segmentation.
         Extract the segmentation image from the AnnData object.
@@ -91,7 +91,7 @@ class Preprocessing:
         library_id: str, library id of the image in adata.uns[spatial_key]
 
         return:
-        np.ndarray, preprocessed image
+        tuple[np.ndarray, np.ndarray], (segmentation_image, inverted_image)
         """
         # set kwargs for the functions
         spatial_key = kwargs.get('spatial_key', 'spatial')
@@ -100,7 +100,12 @@ class Preprocessing:
         threshold = kwargs.get('threshold', 0.5)
         sigma = kwargs.get('sigma', 1.0)
         # Extract the segmentation image
-        segmentation_image = cls.extract_segmentation_image(adata, library_id, **kwargs)
+        if adata is not None:
+            segmentation_image = cls.extract_segmentation_image(adata, library_id, **kwargs)
+        elif image is not None:
+            segmentation_image = image
+        else:
+            raise ValueError("Either adata or image must be provided.")
         # apply gaussian filter
         blurred_image = cls.apply_gaussian_filter(segmentation_image,**kwargs)
         # convert to binary
@@ -108,63 +113,6 @@ class Preprocessing:
         # invert image
         inverted_image = cls.invert_image(binary_image)
         return segmentation_image,inverted_image
-
-
-class Plotting:
-    @staticmethod
-    def plot_3_channel_image(image: np.ndarray, invert_image: np.ndarray, segmented_image: np.ndarray) -> None:
-        """
-        Create 3 channel image and plot it.
-
-        parameters:
-        image: np.ndarray, input image
-        invert_image: np.ndarray, inverted image
-        segmented_image: np.ndarray, segmented image
-
-        return:
-        None
-        """
-        # Stack images along the last axis to create a 3-channel image
-        three_channel_image = np.stack((image, invert_image,segmented_image), axis=-1)
-
-        # Display the 3-channel image using matplotlib
-        fig, axes = plt.subplots(1, 1, figsize=(10, 5))
-        axes.imshow(three_channel_image)
-        axes.set_title('3-Channel Image (binary,inverted and segmented)')
-        axes.axis('off')
-
-        plt.show()
-
-
-    @staticmethod
-    def plot_centroids(image: np.ndarray,size:float=10., figsize: tuple=(10,10)) -> None:
-        """
-        Plot the centroids on the image.
-
-        parameters:
-        image: np.ndarray, input image
-
-        return:
-        None
-        """
-
-        labeled_img=measure.label(image)
-        regions=measure.regionprops(labeled_img)
-        # compute centroids
-        centroids = np.array([region.centroid for region in regions])
-
-        # plot labeled image
-    
-        fig, axes = plt.subplots(1, 1, figsize=figsize)
-        axes.imshow(image, cmap='gray')
-        axes.scatter(centroids[:, 1], centroids[:, 0], c='r', s=size, marker='+')
-        axes.set_title('Centroids')
-        axes.axis('off')
-
-        plt.show()
-
-
-
 
 
 class Exporting:
@@ -239,8 +187,8 @@ class Exporting:
         df[cell_id]=df[cell_id].astype(np.int64)
         df['ObjectNumber']=df[cell_id].astype(np.int64)
         df[library_key]=library_id
-        if cell_annot_key is str:
-            df['cell_annot_key']=cell_type
+        if isinstance(cell_annot_key, str):
+            df[cell_annot_key]=cell_type
         else:
             for i in cell_annot_key:
                 df[i]=cell_type
@@ -303,3 +251,70 @@ class Exporting:
         # update the segmentation image
         adata_new.uns[spatial_key][library_id][image_key][segmentation_key]=new_segmentation
         return adata_new
+
+def shuffle_labels(labeled_image: np.ndarray) -> np.ndarray:
+    '''
+    Shuffles the labels of a labeled image, making it more
+    appealing to plot, since segments next to each other have
+    more diverse label indices, and thereby more diverse colors.
+    '''
+    # Shuffle label values (excluding 0 which is background)
+    labels = np.unique(labeled_image)
+    labels = labels[labels != 0]
+    shuffled_labels = np.random.permutation(labels)
+
+    # Create a mapping
+    label_map = {old: new for old, new in zip(labels, shuffled_labels)}
+    shuffled_labeled_image = np.copy(labeled_image)
+    for old, new in label_map.items():
+        shuffled_labeled_image[labeled_image == old] = new
+    return shuffled_labeled_image
+
+def remove_segments(segmented: np.ndarray, remove_ids: list[int]) -> np.ndarray:
+    """
+    Remove specific objects (by label) from a segmented image.
+
+    Parameters
+    ----------
+    segmented : 2D ndarray of int
+        Labeled segmented image (0 = background).
+    remove_ids : list of int
+        Labels of objects to remove.
+
+    Returns
+    -------
+    filtered : 2D ndarray of int
+        New segmented image with selected labels removed (set to 0).
+    """
+    filtered = segmented.copy()
+    if len(remove_ids) == 0:
+        return filtered
+
+    mask = np.isin(filtered, remove_ids)
+    filtered[mask] = 0
+    return filtered
+
+def process_ground_truth_image(base_path: str, id: str) -> None:
+    '''
+    Generates a segmented ground truth image from the binary.
+    id - string like "ROI001_02454_ROI_1"
+    '''
+    #load:
+    img_tmp = Image.open(base_path + id + " step 3.tif")
+    raw_gt_img = np.array(img_tmp)
+    #segment:
+    labeled_image = measure.label(raw_gt_img)
+    #shuffle labels for better presentation - no good if segments next to each other have very similar indices
+    shuffled_labeled_image = shuffle_labels(labeled_image)
+    #write image to file
+    img = Image.fromarray(shuffled_labeled_image.astype(np.uint16))
+    img.save(base_path + id + " step 4.png")
+    #also create a plot and save it - in the plot we use a color scheme that makes it easier to see segments
+    plt.figure(figsize=(8, 8))
+    plt.imshow(shuffled_labeled_image, cmap='nipy_spectral') 
+    plt.title("Shuffled final")
+    plt.axis("off") 
+    plt.tight_layout()
+    #plt.show()
+    plt.savefig(base_path + id + " ground_truth_plot.png", dpi=300, bbox_inches="tight")  # save instead of show
+    plt.close()#prevents image from being shown in notebooks, annoying if you run many in a loop
