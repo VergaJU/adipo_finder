@@ -2,13 +2,18 @@ import numpy as np
 import pandas as pd
 from scipy.sparse import coo_matrix, csr_matrix
 
+
 class Evaluation:
     """
     Class for evaluating segmentation results.
     """
 
     @staticmethod
-    def evaluate_segmentation(segmented_final: np.ndarray, segmented_ground_truth: np.ndarray, overlap_threshold: float = 0.4) -> dict:
+    def evaluate_segmentation(
+        segmented_final: np.ndarray,
+        segmented_ground_truth: np.ndarray,
+        overlap_threshold: float = 0.4,
+    ) -> dict:
         """
         Fast evaluation against ground truth using Jaccard index (IoU), selecting matches by *max IoU*.
 
@@ -22,30 +27,36 @@ class Evaluation:
 
         # Flatten
         pred = segmented_final.ravel()
-        gt   = segmented_ground_truth.ravel()
+        gt = segmented_ground_truth.ravel()
 
         # Unique labels (exclude background=0) and their true pixel counts
         f_labels, f_counts = np.unique(pred[pred > 0], return_counts=True)
-        g_labels, g_counts = np.unique(gt[gt > 0],   return_counts=True)
+        g_labels, g_counts = np.unique(gt[gt > 0], return_counts=True)
         nf, ng = len(f_labels), len(g_labels)
 
         # Short-circuit trivial case
         if nf == 0 and ng == 0:
             return {
-                "TP": [], "FP": [], "FN": [],
-                "TP_labels_in_GT": [], "FP_best_GT": [], "FN_labels_in_GT": [],
-                "tp_coverage": [], "fp_coverage": [], "fn_coverage": []
+                "TP": [],
+                "FP": [],
+                "FN": [],
+                "TP_labels_in_GT": [],
+                "FP_best_GT": [],
+                "FN_labels_in_GT": [],
+                "tp_coverage": [],
+                "fp_coverage": [],
+                "fn_coverage": [],
             }
 
         # Build sparse intersection matrix only over pixels where both labels > 0
         both = (pred > 0) & (gt > 0)
         if np.any(both):
             pred_pos = pred[both]
-            gt_pos   = gt[both]
+            gt_pos = gt[both]
             # Map raw labels -> compressed indices [0..nf-1], [0..ng-1]
             f_idx = np.searchsorted(f_labels, pred_pos)
             g_idx = np.searchsorted(g_labels, gt_pos)
-            data  = np.ones_like(f_idx, dtype=np.int64)
+            data = np.ones_like(f_idx, dtype=np.int64)
             inter = coo_matrix((data, (f_idx, g_idx)), shape=(nf, ng)).tocsr()
         else:
             inter = csr_matrix((nf, ng), dtype=np.int64)
@@ -61,14 +72,14 @@ class Evaluation:
         # --- Classify each predicted segment as TP or FP by max IoU over overlapping GTs ---
         matched_gt_labels = set()
         for i in range(nf):
-            start, end = indptr[i], indptr[i+1]
+            start, end = indptr[i], indptr[i + 1]
             if start == end:
                 FP.append(int(f_labels[i]))
                 FP_best_GT.append(None)
                 fp_coverage.append(0.0)
                 continue
 
-            cols = indices[start:end]            # GT indices overlapping this predicted segment
+            cols = indices[start:end]  # GT indices overlapping this predicted segment
             inter_vals = values[start:end].astype(np.float64)
             unions = f_counts[i] + g_counts[cols] - inter_vals
             ious = inter_vals / unions
@@ -103,7 +114,7 @@ class Evaluation:
             "FN_labels_in_GT": FN_labels_in_GT,
             "tp_coverage": tp_coverage,
             "fp_coverage": fp_coverage,
-            "fn_coverage": fn_coverage
+            "fn_coverage": fn_coverage,
         }
 
     @staticmethod
@@ -111,16 +122,24 @@ class Evaluation:
         """
         Calculate precision, recall, and F1 score from metrics.
         """
-        tp = len(metrics['TP'])
-        fp = len(metrics['FP'])
-        fn = len(metrics['FN'])
-        P = tp / (tp + fp) if (tp + fp) else 0.0 #precision
-        R = tp / (tp + fn) if (tp + fn) else 0.0 #recall
-        F1 = 2*P*R/(P+R) if (P+R) else 0.0
+        tp = len(metrics["TP"])
+        fp = len(metrics["FP"])
+        fn = len(metrics["FN"])
+        P = tp / (tp + fp) if (tp + fp) else 0.0  # precision
+        R = tp / (tp + fn) if (tp + fn) else 0.0  # recall
+        F1 = 2 * P * R / (P + R) if (P + R) else 0.0
         return P, R, F1
 
     @classmethod
-    def get_pred_eval_dataframe(cls, gt_ids: list, old_metrics: list, new_metrics: list, train_ids: list, val_ids: list, test_ids: list) -> pd.DataFrame:
+    def get_pred_eval_dataframe(
+        cls,
+        gt_ids: list,
+        old_metrics: list,
+        new_metrics: list,
+        train_ids: list,
+        val_ids: list,
+        test_ids: list,
+    ) -> pd.DataFrame:
         """
         Create a DataFrame summarizing evaluation metrics for multiple images.
         """
@@ -128,7 +147,7 @@ class Evaluation:
         for gt_id, m_old, m_new in zip(gt_ids, old_metrics, new_metrics):
             P_old, R_old, F1_old = cls.calc_f1(m_old)
             P_new, R_new, F1_new = cls.calc_f1(m_new)
-            
+
             if gt_id in train_ids:
                 split = "train"
             elif gt_id in val_ids:
@@ -137,13 +156,19 @@ class Evaluation:
                 split = "test"
             else:
                 split = "unknown"
-            
-            rows.append({
-                "gt_id": gt_id,
-                "split": split,
-                "P_old": P_old, "R_old": R_old, "F1_old": F1_old,
-                "P_new": P_new, "R_new": R_new, "F1_new": F1_new
-            })
+
+            rows.append(
+                {
+                    "gt_id": gt_id,
+                    "split": split,
+                    "P_old": P_old,
+                    "R_old": R_old,
+                    "F1_old": F1_old,
+                    "P_new": P_new,
+                    "R_new": R_new,
+                    "F1_new": F1_new,
+                }
+            )
 
         df = pd.DataFrame(rows)
         return df
@@ -160,18 +185,26 @@ class Evaluation:
 
         precision = len(TP) / (len(TP) + len(FP)) if (len(TP) + len(FP)) > 0 else 0.0
         recall = len(TP) / (len(TP) + len(FN)) if (len(TP) + len(FN)) > 0 else 0.0
-        F1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+        F1 = (
+            2 * precision * recall / (precision + recall)
+            if (precision + recall) > 0
+            else 0.0
+        )
         mean_IoU_TP = np.mean(tp_coverage) if tp_coverage else 0.0
 
         return {
             "precision": precision,
             "recall": recall,
             "F1": F1,
-            "mean_IoU_TP": mean_IoU_TP
+            "mean_IoU_TP": mean_IoU_TP,
         }
 
     @staticmethod
-    def assign_gt_labels(segmented_final: np.ndarray, segmented_ground_truth: np.ndarray, overlap_threshold: float = 0.5) -> dict:
+    def assign_gt_labels(
+        segmented_final: np.ndarray,
+        segmented_ground_truth: np.ndarray,
+        overlap_threshold: float = 0.5,
+    ) -> dict:
         """
         Assign each predicted object in segmented_final the GT label with which it has
         the highest IoU (>= overlap_threshold). If no GT passes threshold, assign 0.
@@ -182,11 +215,11 @@ class Evaluation:
         """
 
         pred = segmented_final.ravel()
-        gt   = segmented_ground_truth.ravel()
+        gt = segmented_ground_truth.ravel()
 
         # Unique nonzero labels
         f_labels, f_counts = np.unique(pred[pred > 0], return_counts=True)
-        g_labels, g_counts = np.unique(gt[gt > 0],   return_counts=True)
+        g_labels, g_counts = np.unique(gt[gt > 0], return_counts=True)
         nf, ng = len(f_labels), len(g_labels)
 
         # Empty case
@@ -198,7 +231,7 @@ class Evaluation:
         if np.any(both):
             f_idx = np.searchsorted(f_labels, pred[both])
             g_idx = np.searchsorted(g_labels, gt[both])
-            data  = np.ones_like(f_idx, dtype=np.int64)
+            data = np.ones_like(f_idx, dtype=np.int64)
             inter = coo_matrix((data, (f_idx, g_idx)), shape=(nf, ng)).tocsr()
         else:
             inter = csr_matrix((nf, ng), dtype=np.int64)
@@ -207,7 +240,7 @@ class Evaluation:
         indptr, indices, values = inter.indptr, inter.indices, inter.data
 
         for i in range(nf):
-            start, end = indptr[i], indptr[i+1]
+            start, end = indptr[i], indptr[i + 1]
             if start == end:
                 mapping[int(f_labels[i])] = 0
                 continue
