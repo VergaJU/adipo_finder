@@ -6,5 +6,6 @@ matplotlib
 anndata
 scikit-image
 scipy
-scikit-learntorch
+scikit-learn
+torch
 Pillow
