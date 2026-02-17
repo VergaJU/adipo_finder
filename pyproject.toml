@@ -18,7 +18,9 @@ dependencies = [
     "anndata",
     "scikit-image", 
     "scipy",
-    "scikit-learn"
+    "scikit-learn",
+    "torch",
+    "Pillow"
 ]
 
 [project.urls]
