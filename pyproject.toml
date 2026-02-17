@@ -9,7 +9,6 @@ description = "A package to identify adipocytes from segmentation masks. Develop
 readme = "README.md"
 authors = [{name = "Jacopo Umberto Verga"}]
 requires-python = ">=3.8"
-
 dependencies = [
     "numpy",
     "pandas",
@@ -17,7 +16,7 @@ dependencies = [
     "squidpy",
     "matplotlib",
     "anndata",
-    "scikit-image",  # `skimage` is actually `scikit-image`
+    "scikit-image", 
     "scipy",
     "scikit-learn"
 ]
@@ -28,4 +27,3 @@ dependencies = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-=
