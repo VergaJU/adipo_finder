@@ -237,6 +237,7 @@ class AdipoModel:
         samp_id: str,
         full_df: pd.DataFrame,
         unfiltered_seg: np.ndarray,
+        threshold: float = 0.5
     ) -> np.ndarray:
         """
         Predict adipocytes on a single image and return a cleaned segmentation mask.
@@ -247,7 +248,7 @@ class AdipoModel:
         model.eval()
         with torch.no_grad():
             y_pred_prob = torch.sigmoid(model(X_samp)).numpy().flatten()
-            y_pred = (y_pred_prob > 0.5).astype(bool)
+            y_pred = (y_pred_prob > threshold).astype(bool)
 
         segment_ids = df_samp["segment_id"].values
         segment_ids_to_rem = segment_ids[~y_pred]
