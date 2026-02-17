@@ -25,3 +25,7 @@ dependencies = [
 [project.urls]
 "Homepage" = "https://github.com/VergaJU/adipo_finder"
 "Repository" = "https://github.com/VergaJU/adipo_finder"
+
+[tool.setuptools.packages.find]
+where = ["."]
+=
