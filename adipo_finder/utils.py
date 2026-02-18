@@ -4,7 +4,8 @@ import pandas as pd
 from anndata import AnnData
 from matplotlib import pyplot as plt
 from PIL import Image
-from skimage import filters, measure
+from skimage import filters, measure, morphology
+
 
 
 class Preprocessing:
@@ -83,50 +84,8 @@ class Preprocessing:
         """
         return np.where(image == 0, 255, 0).astype("uint8")
 
-    @classmethod
-    def preprocess_image(
-        cls,
-        image: np.ndarray = None,
-        adata: AnnData = None,
-        library_id: str = None,
-        **kwargs,
-    ) -> tuple[np.ndarray, np.ndarray]:
-        """
-        Preprocess the image for segmentation.
-        Extract the segmentation image from the AnnData object.
-        Convert the segmentation image to binary mask.
-        Apply Gaussian filter to the binary mask.
-        Invert the binary mask.
 
-        parameters:
-        adata: AnnData object
-        library_id: str, library id of the image in adata.uns[spatial_key]
 
-        return:
-        tuple[np.ndarray, np.ndarray], (segmentation_image, inverted_image)
-        """
-        # set kwargs for the functions
-        kwargs.get("spatial_key", "spatial")
-        kwargs.get("image_key", "images")
-        kwargs.get("segmentation_key", "segmentation")
-        kwargs.get("threshold", 0.5)
-        kwargs.get("sigma", 1.0)
-        # Extract the segmentation image
-        if adata is not None:
-            segmentation_image = cls.extract_segmentation_image(
-                adata, library_id, **kwargs
-            )
-        elif image is not None:
-            segmentation_image = image
-        else:
-            raise ValueError("Either adata or image must be provided.")
-        # apply gaussian filter
-        blurred_image = cls.apply_gaussian_filter(segmentation_image, **kwargs)
-        # convert to binary
-        binary_image = cls.segmentation_to_binary(blurred_image, **kwargs)
-        # invert image
-        inverted_image = cls.invert_image(binary_image)
-        return segmentation_image, inverted_image
 
 
 class Exporting:
@@ -262,6 +221,7 @@ class Exporting:
         return adata_tmp
 
     # Function that takes the two adata and the new segmentation image and update the adata with the new segmentation
+    @staticmethod
     def merge_adatas(
         adata: AnnData,
         adata_tmp: AnnData,
@@ -291,7 +251,28 @@ class Exporting:
             segmentation_key
         ] = new_segmentation
         return adata_new
-
+    
+    @classmethod
+    def updated_adata(cls,
+                      adata: AnnData,
+                      library_id: str,
+                      old_seg: np.ndarray,
+                      new_img: np.ndarray,
+                      missing_columns: list[str],
+                      cell_annot_key: str | list[str]) -> AnnData:
+        new_seg,df=cls.export_adipocytes(segmentation_image=old_seg,new_segmentation=new_img)
+        df_exp= cls.expand_df(adata=adata,
+                              df=df,
+                              library_id=library_id,
+                              missing_columns=missing_columns,
+                              cell_annot_key=cell_annot_key)
+        adata_adipo = cls.create_adipo_adata(adata=adata,
+                                                         df=df_exp) 
+        adata_new=cls.merge_adatas(adata=adata,
+                                                adata_tmp=adata_adipo,
+                                                new_segmentation=new_seg,
+                                                library_id=library_id)
+        return adata_new
 
 def shuffle_labels(labeled_image: np.ndarray) -> np.ndarray:
     """

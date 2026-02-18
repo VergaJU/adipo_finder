@@ -1,5 +1,5 @@
 import random
-
+import os
 import numpy as np
 import pandas as pd
 import torch
@@ -9,7 +9,8 @@ from sklearn.metrics import classification_report
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
 from torch.utils.data import DataLoader, TensorDataset
-
+from .plotting import prediction_plot
+from PIL import Image
 
 class AdipoNN(nn.Module):
     """
@@ -257,3 +258,52 @@ class AdipoModel:
         mask = np.isin(cleaned_image, segment_ids_to_rem)
         cleaned_image[mask] = 0
         return cleaned_image
+
+    @classmethod
+    def predict_and_clean_images(cls,
+                                 model: AdipoNN,
+                                 scaler: StandardScaler,
+                                 full_df: pd.DataFrame,
+                                 all_ids: list[str],
+                                 all_unfiltered_seg: list[np.ndarray],
+                                 all_bin_mask: list[np.ndarray],
+                                 path: str,
+                                 plot_path: str,
+                                 threshold: float = 0.5,
+                                 gt_ids: list[str] =None,
+                                 gt_images: list[np.ndarray]=None,
+                                 plot: bool = False
+                                 ) -> list[np.ndarray]:
+        os.makedirs(path, exist_ok=True)
+        cleaned_images = []
+        for samp_ind, samp_id in enumerate(all_ids):
+            print(f"Processing {samp_ind+1} of {len(all_ids)}")
+            cleaned_image = cls.predict_and_clean_image(model=model,
+                                                        scaler=scaler,
+                                                        samp_id=samp_id,
+                                                        full_df=full_df,
+                                                        unfiltered_seg=all_unfiltered_seg[samp_ind],
+                                                        threshold=threshold)
+            cleaned_images.append(cleaned_image)
+            #look up the ground truth image if it exists
+            if gt_ids is not None:
+                gt_ind = [i for i,x in enumerate(gt_ids) if x == samp_id]
+            else:
+                gt_ind = None
+            if gt_ind is not None:
+                gt_img = gt_images[gt_ind[0]]
+            else:
+                gt_img = None
+            img = Image.fromarray(cleaned_image.astype(np.uint16))
+            img.save(path + samp_id + " pred_adipocytes.png")
+            
+            #also make a plot
+            if plot:
+                os.makedirs(plot_path, exist_ok=True)
+                prediction_plot(bin_mask_image=all_bin_mask[samp_ind], 
+                                segmented_unfiltered=all_unfiltered_seg[samp_ind],
+                                pred_image=cleaned_image,
+                                gt_image=gt_img,
+                                filename=plot_path+samp_id+" prediction_plot.png", 
+                                show_plot = False)
+        return cleaned_images

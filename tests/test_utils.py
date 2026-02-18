@@ -5,22 +5,81 @@ from adipo_finder.utils import (Exporting, Preprocessing, remove_segments,
                                 shuffle_labels)
 
 
-def test_preprocess_image(binary_image):
-    """Test preprocessing."""
-    # Preprocessing expects an image, does gaussian filter (blur), thresholding, and inversion
-    # Our binary image is black background (0), white objects (255)
+def test_segmentation_to_binary(labeled_image):
+    """Test segmentation to binary conversion."""
+    # labeled_image has labels 0, 1, 2...
+    # threshold default is 0.5.
+    binary = Preprocessing.segmentation_to_binary(labeled_image, threshold=0.5)
+    
+    assert binary.shape == labeled_image.shape
+    # Should be 255 where labeled_image > 0
+    assert np.all(binary[labeled_image > 0] == 255)
+    assert np.all(binary[labeled_image == 0] == 0)
 
-    # After inversion: white background (255), black objects (0)
-    # The gaussian filter will blur edges.
 
-    seg_image, inverted = Preprocessing.preprocess_image(image=binary_image, sigma=1.0)
+def test_apply_gaussian_filter(binary_image):
+    """Test gaussian filter."""
+    filtered = Preprocessing.apply_gaussian_filter(binary_image, sigma=1.0)
+    assert filtered.shape == binary_image.shape
+    # It preserves range and casts to uint8, so max should be near 255
+    assert filtered.max() > 0
+    assert filtered.dtype == np.uint8
 
-    assert seg_image.shape == binary_image.shape
+
+def test_invert_image(binary_image):
+    """Test image inversion."""
+    inverted = Preprocessing.invert_image(binary_image)
     assert inverted.shape == binary_image.shape
+    # Where original is 0, inverted should be 255
+    assert np.all(inverted[binary_image == 0] == 255)
+    assert np.all(inverted[binary_image == 255] == 0)
 
-    # Inverted image should be mostly white (255) where original was black (0)
-    # Original (0,0) is 0. Inverted (0,0) should be 255.
-    assert inverted[0, 0] == 255
+
+def test_extract_segmentation_image(sample_adata):
+    """Test extracting segmentation image from adata."""
+    # sample_adata setup in conftest: 
+    # adata.uns["spatial"]["lib_1"]["images"]["segmentation"]
+    
+    img = Preprocessing.extract_segmentation_image(
+        sample_adata, library_id="lib_1", spatial_key="spatial"
+    )
+    
+    assert img.shape == (100, 100)
+    assert isinstance(img, np.ndarray)
+
+
+def test_merge_adatas(sample_adata):
+    """Test merging AnnDatas."""
+    # Create a temp adata to merge
+    df = pd.DataFrame(
+        {"centroid-0": [15], "centroid-1": [15], "Cell_ID": [100]},
+        index=["cell_100"]
+    )
+    # The fixture sample_adata has 5 vars (gene_0..4). 
+    # create_adipo_adata creates an AnnData with same var_names as input adata.
+    adata_tmp = Exporting.create_adipo_adata(sample_adata, df)
+    
+    # New segmentation image
+    new_seg = np.zeros((100, 100), dtype=int)
+    
+    # merge_adatas is an instance method? No, defined without @staticmethod in class Exporting?
+    # Let's check utils.py... It's defined as `def merge_adatas(adata, ...)` inside class Exporting but missing @staticmethod decorator!
+    # Wait, if it's missing @staticmethod, it expects 'self'.
+    # I should check utils.py again.
+    
+    merged = Exporting.merge_adatas(
+        sample_adata, adata_tmp, new_seg, library_id="lib_1"
+    )
+    
+    # Should have more observations now? 
+    # sample_adata has 10 cells. adata_tmp has 1. Merged should have 11 (outer join).
+    assert merged.n_obs == 11
+    
+    # Check if segmentation was updated in uns
+    assert np.array_equal(
+        merged.uns["spatial"]["lib_1"]["images"]["segmentation"], 
+        new_seg
+    )
 
 
 def test_export_adipocytes(labeled_image):

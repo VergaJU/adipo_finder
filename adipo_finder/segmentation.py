@@ -1,14 +1,21 @@
 import numpy as np
+import pandas as pd
 from matplotlib import pyplot as plt
+from anndata import AnnData
 from scipy.ndimage import binary_dilation, distance_transform_edt, label
 from skimage import feature, measure, morphology, segmentation
+from .utils import Preprocessing, shuffle_labels
+from .features import FeatureExtraction
+from .evaluation import Evaluation
+from typing import List
+
 
 
 class Segmentation:
 
     @staticmethod
     def find_local_maxima(
-        image: np.ndarray, min_distance: int = 1
+        bin_mask: np.ndarray, inverted_opened_img: np.ndarray, min_distance: int = 30
     ) -> tuple[np.ndarray, np.ndarray]:
         """
         Find local maxima in the distance transform.
@@ -22,9 +29,12 @@ class Segmentation:
         return:
         tuple[np.ndarray, np.ndarray]: distance transform, markers
         """
-        distance = distance_transform_edt(image > 0)
+        distance = distance_transform_edt(bin_mask)
         coords = feature.peak_local_max(
-            distance, footprint=np.ones((3, 3)), labels=image, min_distance=min_distance
+            distance, 
+            footprint=np.ones((3, 3)), 
+            labels=inverted_opened_img, 
+            min_distance=min_distance
         )
         mask = np.zeros(distance.shape, dtype=bool)
         mask[tuple(coords.T)] = True
@@ -37,7 +47,6 @@ class Segmentation:
         image: np.ndarray,
         markers: np.ndarray,
         distance: np.ndarray,
-        window: int = 20,
         **kwargs,
     ) -> np.ndarray:
         """
@@ -54,15 +63,12 @@ class Segmentation:
         """
         # watershed segmentation
         segmented_image = segmentation.watershed(
-            image=-distance, markers=markers, mask=image
+            image=-distance, 
+            markers=markers, 
+            mask=image
         )
-        # perform opening
-        structuring_element = morphology.disk(window)
-        # structuring_element = np.ones((window, window))
-        segmented_image = morphology.opening(
-            segmented_image, footprint=structuring_element
-        )
-        return segmented_image
+        shuffled_labeled_image = shuffle_labels(segmented_image)
+        return shuffled_labeled_image
 
     @staticmethod
     def filter_objects_by_size(
@@ -134,34 +140,6 @@ class Segmentation:
         dilated_image = segmentation.clear_border(dilated_image)
         return dilated_image
 
-    @classmethod
-    def run_segmentation(cls, image: np.ndarray, **kwargs) -> np.ndarray:
-        """
-        Run the entire segmentation pipeline.
-
-        parameters:
-        image: np.ndarray, input image
-
-        return:
-        np.ndarray, filtered segmentation
-        """
-        # distance = cls.compute_distance_transform(image)
-        distance, markers = cls.find_local_maxima(image)
-        # set kwargs for the function
-        kwargs.get("window", 20)
-        kwargs.get("min_size", 400)
-        kwargs.get("max_size", None)
-        kwargs.get("pixels", 5)
-        # segment and perform opening
-        segmented_image = cls.apply_watershed_segmentation(
-            image, markers, distance, **kwargs
-        )
-        # perform filtering
-        filtered_image = cls.filter_objects_by_size(segmented_image, **kwargs)
-        # expand the adipocytes
-        expanded_image = cls.expand_adipocytes(filtered_image, **kwargs)
-
-        return expanded_image
 
     @staticmethod
     def size_shape_filter(
@@ -383,9 +361,10 @@ class Segmentation:
         distance = distance_transform_edt(bin_mask)
 
         # create starting points for the watershed
-        distance, markers = cls.find_local_maxima(
-            inverted_opened_img, min_distance=min_distance_seg_init
-        )
+        distance, markers = cls.find_local_maxima(bin_mask=bin_mask,
+                                                  inverted_opened_img=inverted_opened_img,
+                                                  min_distance=min_distance_seg_init
+                                                  )
 
         # watershed segmentation
         segmented_image_raw = segmentation.watershed(
@@ -416,43 +395,105 @@ class Segmentation:
         return prefiltered
 
 
-def main():
-    from sklearn.datasets import make_blobs
+    @classmethod
+    def preprocess_and_segment(
+        cls,
+        image: np.ndarray = None,
+        adata: AnnData = None,
+        library_id: str = None,
+        gt_img: np.ndarray = None,
+        iou_threshold: float = 0.5,
+        min_distance: int = 30,
+        min_island_area: int =0,
+        **kwargs,
+    ) -> tuple[pd.DataFrame, np.ndarray, np.ndarray, np.ndarray, np.ndarray]:
+        """
+        Preprocess input image, segment, extract features, and assign ground truth labels.
+        
+        """
+        if adata is not None:
+            segmentation_image = Preprocessing.extract_segmentation_image(
+                adata, library_id, **kwargs
+            )
+        elif image is not None:
+            segmentation_image = image
+        else:
+            raise ValueError("Either adata or image must be provided.")
+        
+        # preprocss image
+        bin_mask, distance, segmented, cleaned_mask_image = cls.preprocess_input_image(seg_input_img=segmentation_image,
+                                                                                       min_distance_seg_init=min_distance,
+                                                                                       min_island_area=min_island_area)
 
-    X, _ = make_blobs(
-        n_samples=50000,
-        centers=10,
-        n_features=2,
-        center_box=(0.0, 1000.0),
-        cluster_std=10,
-        random_state=0,
-    )
-    X = X.astype(int)
-    image = np.zeros(
-        (1000, 1000), dtype=int
-    )  # Create, the result array; initialize with 0
-    image[X[:, 0], X[:, 1]] = 255
-    image = image.astype(np.uint8)  # Use ar as a source of indices, to assign 1
-    # image = np.random.randint(0, 255, (1000, 1000), dtype=np.uint8)
-    distance, markers = Segmentation.find_local_maxima(image)
-    segmented_image = Segmentation.apply_watershed_segmentation(
-        image, markers, distance, window=2
-    )
-    filtered_image = Segmentation.filter_objects_by_size(segmented_image)
-
-    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-    axes[0].imshow(image, cmap="gray")
-    axes[0].set_title("Original Image")
-    axes[1].imshow(segmented_image, cmap="gray")
-    axes[1].set_title("Segmented Image")
-    axes[2].imshow(filtered_image, cmap="gray")
-    axes[2].set_title("Masked Image")
-    for ax in axes:
-        ax.axis("off")
-
-    plt.savefig("plot.png")  # Specify the path where you want to save the plot
-    plt.show()
+        
+        features_df = FeatureExtraction.calculate_features(prefiltered_seg_image=segmented,
+                                                        distance_image=distance,
+                                                        bin_mask_image=bin_mask)
+        if gt_img is None:
+            features_df['ground_truth']=np.nan
+        else:
+            gt_map = Evaluation.assign_gt_labels(segmented_final=segmented,
+                                                 segmented_ground_truth=gt_img,
+                                                 overlap_threshold=iou_threshold)
+            features_df['ground_truth'] = features_df["segment_id"].map(gt_map).fillna(0).astype(float)
+        features_df['image_id'] = library_id
+        return features_df, bin_mask, distance, segmented, cleaned_mask_image
 
 
-if __name__ == "__main__":
-    main()
+    @classmethod
+    def prepare_datasets(cls,
+                         all_ids: List[str] = None,
+                         gt_ids: List[str] = None,
+                         input_images: List[np.ndarray] = None,
+                         ground_truth_images: List[np.ndarray] = None,
+                         min_distance_seg_init: int = 30,
+                         min_island_area: int = 0,
+                         iou_threshold: float = 0.5) -> tuple[
+                             pd.DataFrame,
+                             list[np.ndarray],
+                             list[np.ndarray],
+                             list[np.ndarray],
+                             list[np.ndarray],
+                             ]:
+        """
+        Preprocess all images and extract features + labels.
+        The returned ground_truth number is the best overlapping label in the gt if above the 
+        coverage threshold, 0 if matched but below the threshold, and NaN if no overlap. So, 
+        we treat NaN and 0 as False. Note that this classifier we are building assumes the overlaps
+        of real objects are good - the job here is to decide which objects are good objects, not to decide if
+        the watershed did a good job
+        """
+        # 1. Collect object-level features for all images
+        all_dfs = []
+        all_bin_mask = []
+        all_distance = []
+        all_segmented = []
+        all_cleaned_masks = []
+        for img_id, input_img in zip(all_ids, input_images):
+            #look up the ground truth image if it exists
+            if gt_ids is not None:
+                gt_ind = [i for i,x in enumerate(gt_ids) if x == img_id]
+            else:
+                gt_ind = None
+            if gt_ind is None:
+                gt_img = None
+            else:
+                gt_img = ground_truth_images[gt_ind[0]]
+
+            print(f"Processing {img_id}")
+            df, bin_mask, distance, segmented, cleaned_mask_image = cls.preprocess_and_segment(library_id=img_id,
+                                                                                               image=input_img,
+                                                                                               gt_img=gt_img,
+                                                                                               iou_threshold=iou_threshold,
+                                                                                               min_distance=min_distance_seg_init,
+                                                                                               min_island_area=min_island_area)
+            all_dfs.append(df)
+            all_bin_mask.append(bin_mask)
+            all_distance.append(distance)
+            all_segmented.append(segmented)
+            all_cleaned_masks.append(cleaned_mask_image)
+
+        full_df = pd.concat(all_dfs, ignore_index=True)
+        
+        return full_df, all_bin_mask, all_distance, all_segmented, all_cleaned_masks
+

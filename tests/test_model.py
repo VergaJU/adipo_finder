@@ -59,26 +59,63 @@ def test_save_load_model(tmp_path):
     assert loaded_model.net[0].in_features == input_dim
 
 
-def test_predict_and_clean_image(sample_features_df):
-    """Test prediction and cleaning."""
-    # Train a dummy model first
+def test_predict_and_clean_images(sample_features_df, tmp_path):
+    """Test batch prediction and cleaning."""
     model, _, _, _, scaler = AdipoModel.train_model(
         sample_features_df, n_epochs=1, seed=42
     )
-
-    # Create a dummy segmentation mask matching segment_ids
-    # segment_ids are 1, 2, 3
-    # Let's say we want to clean this mask based on model predictions
-    seg_mask = np.zeros((10, 10), dtype=int)
-    seg_mask[0:2, 0:2] = 1
-    seg_mask[2:4, 2:4] = 2
-    seg_mask[4:6, 4:6] = 3
-
-    cleaned = AdipoModel.predict_and_clean_image(
-        model, scaler, "img1", sample_features_df, seg_mask
+    
+    # Setup dummy data
+    # Two images: img1, img2. 
+    all_ids = ["img1", "img2"]
+    
+    # Create dummy segmentation masks
+    seg1 = np.zeros((10, 10), dtype=int)
+    seg1[1, 1] = 1 # segment 1
+    seg1[5, 5] = 2 # segment 2
+    
+    seg2 = np.zeros((10, 10), dtype=int)
+    seg2[2, 2] = 3 # segment 3
+    
+    all_unfiltered_seg = [seg1, seg2]
+    all_bin_mask = [seg1 > 0, seg2 > 0]
+    
+    # Output paths
+    out_path = str(tmp_path / "preds/") + "/"
+    plot_path = str(tmp_path / "plots/") + "/"
+    
+    # Run batch prediction
+    cleaned_images = AdipoModel.predict_and_clean_images(
+        model=model,
+        scaler=scaler,
+        full_df=sample_features_df,
+        all_ids=all_ids,
+        all_unfiltered_seg=all_unfiltered_seg,
+        all_bin_mask=all_bin_mask,
+        path=out_path,
+        plot_path=plot_path,
+        threshold=0.5,
+        plot=True # Test plotting too
     )
+    
+    assert len(cleaned_images) == 2
+    assert cleaned_images[0].shape == (10, 10)
+    assert os.path.exists(out_path)
+    assert os.path.exists(plot_path)
+    # Check if files were created
+    assert os.path.exists(os.path.join(out_path, "img1 pred_adipocytes.png"))
+    assert os.path.exists(os.path.join(plot_path, "img1 prediction_plot.png"))
 
-    assert cleaned.shape == seg_mask.shape
-    # Ideally we'd check if it actually removed something, but with random initialization
-    # and tiny data, prediction is random. Just check it runs and returns valid array.
-    assert np.all(np.isin(cleaned, [0, 1, 2, 3]))
+
+def test_evaluate_model(sample_features_df):
+    """Test model evaluation."""
+    model, _, _, _, scaler = AdipoModel.train_model(
+        sample_features_df, n_epochs=1, seed=42
+    )
+    
+    # Evaluate on "img1" which is in sample_features_df
+    # We need to make sure 'img1' is in the test set or we just force it.
+    test_ids = ["img1"]
+    
+    # This just prints to stdout, but ensures no runtime error
+    AdipoModel.evaluate_model(model, scaler, sample_features_df, test_ids)
