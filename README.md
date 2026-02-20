@@ -4,6 +4,8 @@
 
 Adipocytes are often lost in FFPE-processed bone marrow slides, leading to incomplete spatial proteomics or transcriptomics analysis. `adipo_finder` is a lightweight Python package designed to recover these regions by detecting adipocyte-shaped areas in segmentation masks, enabling more accurate tissue context reconstruction.
 
+Now includes a **Machine Learning module** to filter false positives using shape, size, and spatial context features.
+
 ---
 
 ## 🚀 Features
@@ -11,6 +13,8 @@ Adipocytes are often lost in FFPE-processed bone marrow slides, leading to incom
 - 🔬 Detects adipocytes based on shape and absence of marker staining
 - 🧠 Compatible with segmentation masks from spatial omics pipelines
 - 🧩 Integrates with `squidpy` and `AnnData` objects
+- 🤖 **Machine Learning Classifier:** Train a PyTorch neural network to distinguish true adipocytes from artifacts.
+- 📏 **Advanced Feature Extraction:** Uses shape descriptors (eccentricity, compactness), size, and distance from tissue boundaries.
 - ⚙️ Customizable parameters for blurring, object size, and morphology
 - 🧪 Includes a toy dataset for demonstration and testing
 
@@ -28,12 +32,15 @@ From GitHub:
 
 ```bash
 pip install git+https://github.com/VergaJU/adipo_finder.git
-
 ```
+
+**Requirements:** `numpy`, `pandas`, `scanpy`, `squidpy`, `matplotlib`, `anndata`, `scikit-image`, `scipy`, `scikit-learn`, `torch`, `Pillow`.
+
+---
 
 ## 🧰 Usage
 
-### Minimal example
+### Minimal example (Segmentation)
 
 ```python
 from adipo_finder import utils as seg_utils
@@ -69,6 +76,27 @@ adata_adipo = seg_utils.Exporting.create_adipo_adata(adata=adata,df=df_exp)
 adata_new=seg_utils.Exporting.merge_adatas(adata=adata,adata_tmp=adata_adipo,new_segmentation=new_seg,library_id="library_identifier")
 ```
 
+### Machine Learning Classification
+
+You can now train a classifier to improve precision by filtering out false positives.
+
+```python
+from adipo_finder import AdipoModel, FeatureExtraction, Segmentation
+import pandas as pd
+
+# 1. Preprocess and Extract Features
+# Assume you have a list of images and optionally ground truth masks
+# ... (load images) ...
+
+# 2. Prepare Data (Example)
+# df = ... (dataframe with features extracted via FeatureExtraction.calculate_features)
+
+# 3. Train Model
+model, train_ids, val_ids, test_ids, scaler = AdipoModel.train_model(df, n_epochs=500)
+
+# 4. Predict and Clean Image
+cleaned_seg = AdipoModel.predict_and_clean_image(model, scaler, image_id, df, original_segmentation)
+```
 
 ## 📂 Toy Dataset
 

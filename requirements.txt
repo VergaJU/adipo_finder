@@ -7,3 +7,5 @@ anndata
 scikit-image
 scipy
 scikit-learn
+torch
+Pillow
